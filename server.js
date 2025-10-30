@@ -49,7 +49,7 @@ async function getAIResponse(userMessage, userId) {
     const response = await axios.post(
       "https://openrouter.ai/api/v1/chat/completions",
       {
-        model: "google/gemini-2.0-flash-exp:free",
+        model: "deepseek/deepseek-r1:free",
         messages: [
           {
             role: "system",
