@@ -25,6 +25,81 @@ const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 // Store conversation history per user
 const conversationHistory = new Map();
 
+// Queue system for rate limiting
+const messageQueue = [];
+let isProcessing = false;
+const RATE_LIMIT_DELAY = 3000; // 3 seconds between requests (20 per minute)
+
+// Process message queue
+async function processQueue() {
+  if (isProcessing || messageQueue.length === 0) {
+    return;
+  }
+
+  isProcessing = true;
+  const { chatId, messageThreadId, userId, text, messageId } =
+    messageQueue.shift();
+
+  try {
+    console.log(
+      `Processing message from queue. Remaining in queue: ${messageQueue.length}`
+    );
+
+    // Send typing indicator continuously
+    const typingInterval = setInterval(async () => {
+      try {
+        await bot.sendChatAction(chatId, "typing", {
+          message_thread_id: messageThreadId,
+        });
+      } catch (err) {
+        console.error("Error sending typing action:", err);
+      }
+    }, 4000); // Send typing every 4 seconds
+
+    try {
+      // Get AI response
+      const aiResponse = await getAIResponse(text, userId);
+
+      // Stop typing indicator
+      clearInterval(typingInterval);
+
+      // Send response
+      await bot.sendMessage(chatId, aiResponse, {
+        message_thread_id: messageThreadId,
+        reply_to_message_id: messageId,
+      });
+
+      console.log("AI response sent successfully");
+    } catch (innerError) {
+      // Stop typing indicator on error
+      clearInterval(typingInterval);
+      throw innerError; // Re-throw to outer catch
+    }
+  } catch (error) {
+    console.error("Error processing message from queue:", error);
+
+    // Send error message to user
+    try {
+      await bot.sendMessage(
+        chatId,
+        "Sorry, an error occurred. Please try again.",
+        {
+          message_thread_id: messageThreadId,
+          reply_to_message_id: messageId,
+        }
+      );
+    } catch (sendError) {
+      console.error("Error sending error message:", sendError);
+    }
+  }
+
+  // Wait before processing next message (rate limiting)
+  setTimeout(() => {
+    isProcessing = false;
+    processQueue(); // Process next message in queue
+  }, RATE_LIMIT_DELAY);
+}
+
 // Function to call OpenRouter AI
 async function getAIResponse(userMessage, userId) {
   try {
@@ -49,12 +124,12 @@ async function getAIResponse(userMessage, userId) {
     const response = await axios.post(
       "https://openrouter.ai/api/v1/chat/completions",
       {
-        model: "deepseek/deepseek-chat-v3-0324",
+        model: "nvidia/nemotron-nano-12b-v2-vl:free",
         messages: [
           {
             role: "system",
             content:
-              "You are a helpful AI assistant in a Telegram channel. Respond in a friendly and concise manner. You can understand and respond in Persian (Farsi) language.",
+              "You are a helpful AI assistant in a Telegram group. Respond in a friendly and concise manner. You can understand and respond in Persian (Farsi) language.",
           },
           ...history,
         ],
@@ -83,7 +158,7 @@ async function getAIResponse(userMessage, userId) {
       "OpenRouter API Error:",
       error.response?.data || error.message
     );
-    return "متأسفم، در حال حاضر نمی‌توانم پاسخ دهم. لطفاً دوباره تلاش کنید.";
+    return "Sorry, I cannot respond at the moment. Please try again later.";
   }
 }
 
@@ -112,16 +187,36 @@ bot.on("message", async (msg) => {
         return;
       }
 
-      // Get AI response
-      const aiResponse = await getAIResponse(text, userId);
-
-      // Send response to the same topic
-      await bot.sendMessage(chatId, aiResponse, {
-        message_thread_id: messageThreadId,
-        reply_to_message_id: msg.message_id,
+      // Add message to queue
+      messageQueue.push({
+        chatId,
+        messageThreadId,
+        userId,
+        text,
+        messageId: msg.message_id,
       });
 
-      console.log("AI response sent successfully");
+      console.log(
+        `Message added to queue. Queue length: ${messageQueue.length}`
+      );
+
+      // Notify user about queue status
+      if (messageQueue.length > 1) {
+        const queuePosition = messageQueue.length - 1;
+        const estimatedWaitTime = queuePosition * (RATE_LIMIT_DELAY / 1000);
+
+        await bot.sendMessage(
+          chatId,
+          `⏳ Your message has been queued.\n📍 Position in queue: ${queuePosition}\n⏱ Estimated wait time: ${estimatedWaitTime} seconds`,
+          {
+            message_thread_id: messageThreadId,
+            reply_to_message_id: msg.message_id,
+          }
+        );
+      }
+
+      // Start processing queue
+      processQueue();
     } else {
       console.log("Message ignored - not from target channel/topic");
     }
