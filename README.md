@@ -1,6 +1,6 @@
-# Telegram AI Bot با OpenRouter
+# Telegram AI Bot با Google Gemini
 
-این بات تلگرام فقط در یک تاپیک خاص از چنل شما پاسخ می‌دهد و از هوش مصنوعی OpenRouter استفاده می‌کند.
+این بات تلگرام فقط در یک تاپیک خاص از چنل شما پاسخ می‌دهد و از هوش مصنوعی Google Gemini استفاده می‌کند.
 
 ## نصب و راه‌اندازی
 
@@ -15,7 +15,7 @@ npm install
 فایل `.env` شامل تنظیمات زیر است:
 
 - `TELEGRAM_BOT_TOKEN`: توکن بات تلگرام شما
-- `OPENROUTER_API_KEY`: کلید API از OpenRouter
+- `GOOGLE_API_KEY`: کلید API از Google AI Studio
 - `CHANNEL_ID`: شناسه چنل (-1003221138302)
 - `TOPIC_ID`: شناسه تاپیک (620)
 
@@ -34,8 +34,10 @@ npm run dev
 ## ویژگی‌ها
 
 - ✅ پاسخ فقط در تاپیک مشخص شده
-- ✅ استفاده از OpenRouter AI (مدل Llama 3.1)
+- ✅ استفاده از Google Gemini 2.0 Flash
 - ✅ ذخیره تاریخچه مکالمه برای هر کاربر
+- ✅ سیستم صف و Rate Limiting (20 درخواست در دقیقه)
+- ✅ نمایش "typing..." هنگام پردازش
 - ✅ سرور Express برای health check
 - ✅ مدیریت خطا و لاگ‌گذاری
 

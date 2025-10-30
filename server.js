@@ -20,7 +20,7 @@ const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, {
 // Configuration
 const CHANNEL_ID = parseInt(process.env.CHANNEL_ID);
 const TOPIC_ID = parseInt(process.env.TOPIC_ID);
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
 
 // Store conversation history per user
 const conversationHistory = new Map();
@@ -121,30 +121,37 @@ async function getAIResponse(userMessage, userId) {
       history.splice(0, history.length - 10);
     }
 
+    // Format messages for Gemini API
+    const geminiMessages = history.map((msg) => ({
+      role: msg.role === "assistant" ? "model" : "user",
+      parts: [{ text: msg.content }],
+    }));
+
     const response = await axios.post(
-      "https://openrouter.ai/api/v1/chat/completions",
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
       {
-        model: "openai/gpt-oss-20b:free",
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are a helpful AI assistant in a Telegram group. Respond in a friendly and concise manner. You can understand and respond in Persian (Farsi) language.",
-          },
-          ...history,
-        ],
+        contents: geminiMessages,
+        systemInstruction: {
+          parts: [
+            {
+              text: "You are a helpful AI assistant in a Telegram group. Respond in a friendly and concise manner. You can understand and respond in Persian (Farsi) language.",
+            },
+          ],
+        },
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 1000,
+        },
       },
       {
         headers: {
-          Authorization: `Bearer ${OPENROUTER_API_KEY}`,
           "Content-Type": "application/json",
-          "HTTP-Referer": "https://telegram.org",
-          "X-Title": "Telegram AI Bot",
+          "x-goog-api-key": GOOGLE_API_KEY,
         },
       }
     );
 
-    const aiMessage = response.data.choices[0].message.content;
+    const aiMessage = response.data.candidates[0].content.parts[0].text;
 
     // Add AI response to history
     history.push({
@@ -155,7 +162,7 @@ async function getAIResponse(userMessage, userId) {
     return aiMessage;
   } catch (error) {
     console.error(
-      "OpenRouter API Error:",
+      "Google Gemini API Error:",
       error.response?.data || error.message
     );
     return "Sorry, I cannot respond at the moment. Please try again later.";
@@ -243,6 +250,52 @@ app.get("/", (req, res) => {
     channel: CHANNEL_ID,
     topic: TOPIC_ID,
   });
+});
+
+// API health check endpoint
+app.get("/test-api", async (req, res) => {
+  try {
+    console.log("Testing Google Gemini API...");
+
+    const response = await axios.post(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+      {
+        contents: [
+          {
+            parts: [{ text: "Say 'API is working!' in one sentence." }],
+          },
+        ],
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 50,
+        },
+      },
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": GOOGLE_API_KEY,
+        },
+      }
+    );
+
+    const aiResponse = response.data.candidates[0].content.parts[0].text;
+
+    res.json({
+      status: "success",
+      message: "Google Gemini API is working!",
+      apiResponse: aiResponse,
+      model: "gemini-2.5-flash",
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("API Test Error:", error.response?.data || error.message);
+    res.status(500).json({
+      status: "error",
+      message: "Google Gemini API test failed",
+      error: error.response?.data || error.message,
+      timestamp: new Date().toISOString(),
+    });
+  }
 });
 
 app.listen(PORT, () => {
