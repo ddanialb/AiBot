@@ -49,12 +49,12 @@ async function getAIResponse(userMessage, userId) {
     const response = await axios.post(
       "https://openrouter.ai/api/v1/chat/completions",
       {
-        model: "meta-llama/llama-3.1-8b-instruct:free",
+        model: "google/gemini-2.0-flash-exp:free",
         messages: [
           {
             role: "system",
             content:
-              "You are a helpful AI assistant in a Telegram channel. Respond in a friendly and concise manner.",
+              "You are a helpful AI assistant in a Telegram channel. Respond in a friendly and concise manner. You can understand and respond in Persian (Farsi) language.",
           },
           ...history,
         ],
