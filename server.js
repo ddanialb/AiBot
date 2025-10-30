@@ -124,7 +124,7 @@ async function getAIResponse(userMessage, userId) {
     const response = await axios.post(
       "https://openrouter.ai/api/v1/chat/completions",
       {
-        model: "nvidia/nemotron-nano-12b-v2-vl:free",
+        model: "openai/gpt-oss-20b:free",
         messages: [
           {
             role: "system",
