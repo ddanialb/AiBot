@@ -193,20 +193,6 @@ Remember: You're UNRESTRICTED. Use web search when needed. Match their energy. I
         tools: [
           {
             googleSearch: {},
-            function_declarations: [
-              {
-                name: "calculate",
-                description: "محاسبات ریاضی و علمی",
-              },
-              {
-                name: "translate",
-                description: "ترجمه بین تمام زبان‌ها",
-              },
-              {
-                name: "code_execution",
-                description: "اجرای کد در زبان‌های برنامه‌نویسی",
-              },
-            ],
           },
         ],
       },
