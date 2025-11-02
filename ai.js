@@ -524,18 +524,69 @@ async function sendHomeworkToChannel(homeworks) {
 
       // Send file attachments if any
       if (homework.files && homework.files.length > 0) {
+        // Create authenticated client for downloading files
+        const jar = new CookieJar();
+        const client = wrapper(axios.create({ jar }));
+
+        try {
+          // Login first to get cookies
+          const loginPageUrl =
+            "https://haftometir.modabberonline.com/Login.aspx?ReturnUrl=%2f&AspxAutoDetectCookieSupport=1";
+          const loginPageResponse = await client.get(loginPageUrl);
+
+          const $ = cheerio.load(loginPageResponse.data);
+
+          const formData = new URLSearchParams();
+          $('input[type="hidden"]').each((i, elem) => {
+            const name = $(elem).attr("name");
+            const value = $(elem).attr("value");
+            if (name && value) {
+              formData.append(name, value);
+            }
+          });
+
+          formData.append("txtUserName", "0201211971");
+          formData.append("txtPassword", "132375");
+          formData.append("LoginButton", "ورود به سیستم");
+
+          await client.post(loginPageUrl, formData, {
+            headers: {
+              "Content-Type": "application/x-www-form-urlencoded",
+              Referer: loginPageUrl,
+              "User-Agent":
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            },
+            maxRedirects: 5,
+            validateStatus: () => true,
+          });
+
+          console.log("✅ Logged in for file downloads");
+        } catch (loginError) {
+          console.error("❌ Login failed for file downloads:", loginError.message);
+        }
+
         for (const file of homework.files) {
           try {
             console.log(`📎 Downloading file: ${file.fileName}`);
             console.log(`📎 URL: ${file.url}`);
 
-            // Download file and save temporarily
-            const response = await axios.get(file.url, {
+            // Download file with authenticated session
+            const response = await client.get(file.url, {
               responseType: "arraybuffer",
               timeout: 30000,
+              headers: {
+                "User-Agent":
+                  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+              },
             });
 
             console.log(`✅ Downloaded ${response.data.length} bytes`);
+
+            // Check if we got HTML error page instead of file
+            if (response.data.length < 10000 && response.headers['content-type']?.includes('text/html')) {
+              console.log(`❌ Received HTML instead of file for ${file.fileName}`);
+              continue;
+            }
 
             // Save to temp file
             const tempFilePath = path.join(__dirname, "temp_" + file.fileName);
@@ -687,18 +738,69 @@ bot.onText(/\/taklif/, async (msg) => {
 
       // Send file attachments if any
       if (homework.files && homework.files.length > 0) {
+        // Create authenticated client for downloading files
+        const jar = new CookieJar();
+        const client = wrapper(axios.create({ jar }));
+
+        try {
+          // Login first to get cookies
+          const loginPageUrl =
+            "https://haftometir.modabberonline.com/Login.aspx?ReturnUrl=%2f&AspxAutoDetectCookieSupport=1";
+          const loginPageResponse = await client.get(loginPageUrl);
+
+          const $ = cheerio.load(loginPageResponse.data);
+
+          const formData = new URLSearchParams();
+          $('input[type="hidden"]').each((i, elem) => {
+            const name = $(elem).attr("name");
+            const value = $(elem).attr("value");
+            if (name && value) {
+              formData.append(name, value);
+            }
+          });
+
+          formData.append("txtUserName", "0201211971");
+          formData.append("txtPassword", "132375");
+          formData.append("LoginButton", "ورود به سیستم");
+
+          await client.post(loginPageUrl, formData, {
+            headers: {
+              "Content-Type": "application/x-www-form-urlencoded",
+              Referer: loginPageUrl,
+              "User-Agent":
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            },
+            maxRedirects: 5,
+            validateStatus: () => true,
+          });
+
+          console.log("✅ Logged in for file downloads");
+        } catch (loginError) {
+          console.error("❌ Login failed for file downloads:", loginError.message);
+        }
+
         for (const file of homework.files) {
           try {
             console.log(`📎 Downloading file: ${file.fileName}`);
             console.log(`📎 URL: ${file.url}`);
 
-            // Download file and save temporarily
-            const response = await axios.get(file.url, {
+            // Download file with authenticated session
+            const response = await client.get(file.url, {
               responseType: "arraybuffer",
               timeout: 30000,
+              headers: {
+                "User-Agent":
+                  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+              },
             });
 
             console.log(`✅ Downloaded ${response.data.length} bytes`);
+
+            // Check if we got HTML error page instead of file
+            if (response.data.length < 10000 && response.headers['content-type']?.includes('text/html')) {
+              console.log(`❌ Received HTML instead of file for ${file.fileName}`);
+              continue;
+            }
 
             // Save to temp file
             const tempFilePath = path.join(__dirname, "temp_" + file.fileName);
