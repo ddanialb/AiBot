@@ -100,7 +100,7 @@ async function processQueue() {
   }, RATE_LIMIT_DELAY);
 }
 
-// Function to call OpenRouter AI
+// Function to call Gemini AI
 async function getAIResponse(userMessage, userId) {
   try {
     // Get or initialize conversation history for this user
