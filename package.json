@@ -2,13 +2,11 @@
   "name": "telegram-ai-bot",
   "version": "1.0.0",
   "description": "Telegram bot with Google Gemini AI and homework checker",
-  "main": "index.js",
+  "main": "ai.js",
   "type": "commonjs",
   "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js",
-    "ai": "node ai.js",
-    "taklif": "node taklif.js"
+    "start": "node ai.js",
+    "dev": "nodemon ai.js"
   },
   "keywords": [
     "telegram",
