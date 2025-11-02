@@ -382,20 +382,44 @@ async function fetchHomework() {
         type: extractField("Type"),
         done: extractField("Done"),
         canUploadAttachment: extractField("StudentCanUploadAttachment"),
+        files: [],
       };
+
+      // Extract file attachments
+      const filesRegex =
+        /<tblCAClassEventsAttachment>([\s\S]*?)<\/tblCAClassEventsAttachment>/g;
+      let fileMatch;
+      while ((fileMatch = filesRegex.exec(eventXml)) !== null) {
+        const fileXml = fileMatch[1];
+        const fileNameMatch = fileXml.match(/<FileName>(.*?)<\/FileName>/);
+        const extensionMatch = fileXml.match(/<Extension>(.*?)<\/Extension>/);
+
+        if (fileNameMatch) {
+          const fileName = fileNameMatch[1].trim();
+          const extension = extensionMatch ? extensionMatch[1].trim() : "";
+          homework.files.push({
+            fileName: fileName,
+            extension: extension,
+            url: `https://haftometir.modabberonline.com/Files/ClassEvents/${fileName}`,
+          });
+        }
+      }
 
       // Calculate time remaining
       if (deadlineRaw) {
         const deadlineDate = new Date(deadlineRaw);
         const now = new Date();
-        const diff = deadlineDate - now;
+        const diffMs = deadlineDate.getTime() - now.getTime();
 
-        if (diff > 0) {
-          const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-          const hours = Math.floor(
-            (diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)
-          );
-          const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        if (diffMs > 0) {
+          const totalSeconds = Math.floor(diffMs / 1000);
+          const totalMinutes = Math.floor(totalSeconds / 60);
+          const totalHours = Math.floor(totalMinutes / 60);
+          const days = Math.floor(totalHours / 24);
+
+          const hours = totalHours % 24;
+          const minutes = totalMinutes % 60;
+
           homework.timeRemaining = `${days} روز، ${hours} ساعت، ${minutes} دقیقه`;
         } else {
           homework.timeRemaining = "منقضی شده";
@@ -416,19 +440,21 @@ async function fetchHomework() {
 // Format homework message for Telegram
 function formatHomeworkMessage(homework) {
   let message = `📚 *${homework.subject}*\n\n`;
-  message += `📝 *عنوان:* ${homework.title}\n\n`;
+  message += `📝 *عنوان تکلیف:*\n${homework.title}\n\n`;
 
   if (homework.description) {
-    message += `📄 *توضیحات:*\n${homework.description}\n\n`;
+    message += `📄 *شرح:*\n${homework.description}\n\n`;
   }
 
-  message += `📅 *مهلت:* ${homework.deadline || "نامشخص"}\n`;
+  if (homework.publishDate) {
+    message += `📌 *تاریخ انتشار:*\n${homework.publishDate}\n\n`;
+  }
+
+  message += `📅 *موعد تحویل:*\n${homework.deadline || "نامشخص"}\n\n`;
 
   if (homework.timeRemaining) {
-    message += `⏰ *زمان باقیمانده:* ${homework.timeRemaining}\n`;
+    message += `⏰ *زمان باقیمانده:* ${homework.timeRemaining}`;
   }
-
-  message += `✅ *انجام شده:* ${homework.done === "true" ? "بله" : "خیر"}\n`;
 
   return message;
 }
@@ -485,8 +511,76 @@ async function sendHomeworkToChannel(homeworks) {
       newMessageIds.push(sentMessage.message_id);
       console.log(`✅ Sent: ${homework.subject} - ${homework.title}`);
 
-      // Wait 1 second between messages to avoid rate limiting
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      // Wait a bit after sending message
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      // Send file attachments if any
+      if (homework.files && homework.files.length > 0) {
+        for (const file of homework.files) {
+          try {
+            console.log(`📎 Downloading file: ${file.fileName}`);
+            const response = await axios.get(file.url, {
+              responseType: "stream",
+            });
+
+            // Send the file based on extension
+            const extension = file.extension.toLowerCase();
+            if (
+              ["jpg", "jpeg", "png", "gif", "bmp", "webp"].includes(extension)
+            ) {
+              const photoMessage = await bot.sendPhoto(
+                TAKLIF_CHANNEL_ID,
+                response.data,
+                {
+                  message_thread_id: TAKLIF_TOPIC_ID,
+                }
+              );
+              newMessageIds.push(photoMessage.message_id);
+            } else if (
+              ["pdf", "doc", "docx", "txt", "zip", "rar"].includes(extension)
+            ) {
+              const docMessage = await bot.sendDocument(
+                TAKLIF_CHANNEL_ID,
+                response.data,
+                {
+                  message_thread_id: TAKLIF_TOPIC_ID,
+                },
+                {
+                  filename: file.fileName,
+                }
+              );
+              newMessageIds.push(docMessage.message_id);
+            } else {
+              // Default to document for unknown types
+              const docMessage = await bot.sendDocument(
+                TAKLIF_CHANNEL_ID,
+                response.data,
+                {
+                  message_thread_id: TAKLIF_TOPIC_ID,
+                },
+                {
+                  filename: file.fileName,
+                }
+              );
+              newMessageIds.push(docMessage.message_id);
+            }
+
+            console.log(`✅ Sent file: ${file.fileName}`);
+            await new Promise((resolve) => setTimeout(resolve, 500));
+          } catch (fileError) {
+            console.error(
+              `❌ Error sending file ${file.fileName}:`,
+              fileError.message
+            );
+          }
+        }
+
+        // Wait longer after sending all files before next homework
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      } else {
+        // Wait 1 second if no files
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
     } catch (error) {
       console.error(`❌ Error sending homework:`, error.message);
     }
@@ -580,6 +674,61 @@ bot.onText(/\/taklif/, async (msg) => {
         parse_mode: "Markdown",
         message_thread_id: messageThreadId,
       });
+
+      // Send file attachments if any
+      if (homework.files && homework.files.length > 0) {
+        for (const file of homework.files) {
+          try {
+            console.log(`📎 Downloading file: ${file.fileName}`);
+            const response = await axios.get(file.url, {
+              responseType: "stream",
+            });
+
+            // Send the file based on extension
+            const extension = file.extension.toLowerCase();
+            if (
+              ["jpg", "jpeg", "png", "gif", "bmp", "webp"].includes(extension)
+            ) {
+              await bot.sendPhoto(chatId, response.data, {
+                message_thread_id: messageThreadId,
+              });
+            } else if (
+              ["pdf", "doc", "docx", "txt", "zip", "rar"].includes(extension)
+            ) {
+              await bot.sendDocument(
+                chatId,
+                response.data,
+                {
+                  message_thread_id: messageThreadId,
+                },
+                {
+                  filename: file.fileName,
+                }
+              );
+            } else {
+              // Default to document for unknown types
+              await bot.sendDocument(
+                chatId,
+                response.data,
+                {
+                  message_thread_id: messageThreadId,
+                },
+                {
+                  filename: file.fileName,
+                }
+              );
+            }
+
+            console.log(`✅ Sent file: ${file.fileName}`);
+            await new Promise((resolve) => setTimeout(resolve, 500));
+          } catch (fileError) {
+            console.error(
+              `❌ Error sending file ${file.fileName}:`,
+              fileError.message
+            );
+          }
+        }
+      }
 
       // Wait 1 second between messages
       await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -735,7 +884,7 @@ app.listen(PORT, () => {
     `Bot is listening for messages in channel ${CHANNEL_ID}, topic ${TOPIC_ID}`
   );
   console.log(`📚 Taklif Bot: Daily updates at ${DAILY_UPDATE_HOUR}:00`);
-  
+
   // Start taklif scheduler
   scheduleDailyUpdate();
 });
