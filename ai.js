@@ -407,9 +407,17 @@ async function fetchHomework() {
 
       // Calculate time remaining
       if (deadlineRaw) {
+        // Parse deadline date
         const deadlineDate = new Date(deadlineRaw);
+
+        // Get current time in Iran timezone (UTC+3:30)
         const now = new Date();
-        const diffMs = deadlineDate.getTime() - now.getTime();
+        const iranOffset = 3.5 * 60 * 60 * 1000; // 3.5 hours in milliseconds
+        const utcTime = now.getTime() + now.getTimezoneOffset() * 60 * 1000;
+        const iranTime = new Date(utcTime + iranOffset);
+
+        // Calculate difference
+        const diffMs = deadlineDate.getTime() - iranTime.getTime();
 
         if (diffMs > 0) {
           const totalSeconds = Math.floor(diffMs / 1000);
@@ -519,9 +527,19 @@ async function sendHomeworkToChannel(homeworks) {
         for (const file of homework.files) {
           try {
             console.log(`📎 Downloading file: ${file.fileName}`);
+            console.log(`📎 URL: ${file.url}`);
+
+            // Download file and save temporarily
             const response = await axios.get(file.url, {
-              responseType: "stream",
+              responseType: "arraybuffer",
+              timeout: 30000,
             });
+
+            console.log(`✅ Downloaded ${response.data.length} bytes`);
+
+            // Save to temp file
+            const tempFilePath = path.join(__dirname, "temp_" + file.fileName);
+            fs.writeFileSync(tempFilePath, response.data);
 
             // Send the file based on extension
             const extension = file.extension.toLowerCase();
@@ -530,48 +548,40 @@ async function sendHomeworkToChannel(homeworks) {
             ) {
               const photoMessage = await bot.sendPhoto(
                 TAKLIF_CHANNEL_ID,
-                response.data,
+                tempFilePath,
                 {
                   message_thread_id: TAKLIF_TOPIC_ID,
                 }
               );
               newMessageIds.push(photoMessage.message_id);
-            } else if (
-              ["pdf", "doc", "docx", "txt", "zip", "rar"].includes(extension)
-            ) {
-              const docMessage = await bot.sendDocument(
-                TAKLIF_CHANNEL_ID,
-                response.data,
-                {
-                  message_thread_id: TAKLIF_TOPIC_ID,
-                },
-                {
-                  filename: file.fileName,
-                }
-              );
-              newMessageIds.push(docMessage.message_id);
+              console.log(`✅ Sent photo: ${file.fileName}`);
             } else {
-              // Default to document for unknown types
               const docMessage = await bot.sendDocument(
                 TAKLIF_CHANNEL_ID,
-                response.data,
+                tempFilePath,
                 {
                   message_thread_id: TAKLIF_TOPIC_ID,
                 },
                 {
                   filename: file.fileName,
+                  contentType: "application/octet-stream",
                 }
               );
               newMessageIds.push(docMessage.message_id);
+              console.log(`✅ Sent document: ${file.fileName}`);
             }
 
-            console.log(`✅ Sent file: ${file.fileName}`);
+            // Delete temp file
+            fs.unlinkSync(tempFilePath);
+
             await new Promise((resolve) => setTimeout(resolve, 500));
           } catch (fileError) {
             console.error(
-              `❌ Error sending file ${file.fileName}:`,
+              `❌ آپلود ناموفق ${file.fileName}:`,
               fileError.message
             );
+            // Continue with next file instead of stopping
+            continue;
           }
         }
 
@@ -680,52 +690,55 @@ bot.onText(/\/taklif/, async (msg) => {
         for (const file of homework.files) {
           try {
             console.log(`📎 Downloading file: ${file.fileName}`);
+            console.log(`📎 URL: ${file.url}`);
+
+            // Download file and save temporarily
             const response = await axios.get(file.url, {
-              responseType: "stream",
+              responseType: "arraybuffer",
+              timeout: 30000,
             });
+
+            console.log(`✅ Downloaded ${response.data.length} bytes`);
+
+            // Save to temp file
+            const tempFilePath = path.join(__dirname, "temp_" + file.fileName);
+            fs.writeFileSync(tempFilePath, response.data);
 
             // Send the file based on extension
             const extension = file.extension.toLowerCase();
             if (
               ["jpg", "jpeg", "png", "gif", "bmp", "webp"].includes(extension)
             ) {
-              await bot.sendPhoto(chatId, response.data, {
+              await bot.sendPhoto(chatId, tempFilePath, {
                 message_thread_id: messageThreadId,
               });
-            } else if (
-              ["pdf", "doc", "docx", "txt", "zip", "rar"].includes(extension)
-            ) {
-              await bot.sendDocument(
-                chatId,
-                response.data,
-                {
-                  message_thread_id: messageThreadId,
-                },
-                {
-                  filename: file.fileName,
-                }
-              );
+              console.log(`✅ Sent photo: ${file.fileName}`);
             } else {
-              // Default to document for unknown types
               await bot.sendDocument(
                 chatId,
-                response.data,
+                tempFilePath,
                 {
                   message_thread_id: messageThreadId,
                 },
                 {
                   filename: file.fileName,
+                  contentType: "application/octet-stream",
                 }
               );
+              console.log(`✅ Sent document: ${file.fileName}`);
             }
 
-            console.log(`✅ Sent file: ${file.fileName}`);
+            // Delete temp file
+            fs.unlinkSync(tempFilePath);
+
             await new Promise((resolve) => setTimeout(resolve, 500));
           } catch (fileError) {
             console.error(
-              `❌ Error sending file ${file.fileName}:`,
+              `❌ آپلود ناموفق ${file.fileName}:`,
               fileError.message
             );
+            // Continue with next file instead of stopping
+            continue;
           }
         }
       }
