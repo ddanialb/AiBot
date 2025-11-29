@@ -30,7 +30,7 @@ const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
 // Taklif Configuration
 const TAKLIF_CHANNEL_ID = "-1003221138302";
 const TAKLIF_TOPIC_ID = 22;
-const DAILY_UPDATE_HOUR = 15; // 3 PM
+const DAILY_UPDATE_HOUR = 15;
 const SENT_TAKLIF_FILE = path.join(__dirname, "sent_taklif.json");
 
 // Store conversation history per user
@@ -39,7 +39,21 @@ const conversationHistory = new Map();
 // Queue system for rate limiting
 const messageQueue = [];
 let isProcessing = false;
-const RATE_LIMIT_DELAY = 3000; // 3 seconds between requests (20 per minute)
+const RATE_LIMIT_DELAY = 3000;
+const processedMessageIds = new Set();
+
+// Bot owner ID
+const BOT_OWNER_ID = 1716743252;
+
+// تابع برای escape کردن HTML
+function escapeHtml(text) {
+  if (!text) return "";
+  return text
+    .toString()
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
 
 // Process message queue
 async function processQueue() {
@@ -56,7 +70,6 @@ async function processQueue() {
       `Processing message from queue. Remaining in queue: ${messageQueue.length}`
     );
 
-    // Send typing indicator continuously
     const typingInterval = setInterval(async () => {
       try {
         await bot.sendChatAction(chatId, "typing", {
@@ -65,16 +78,12 @@ async function processQueue() {
       } catch (err) {
         console.error("Error sending typing action:", err);
       }
-    }, 4000); // Send typing every 4 seconds
+    }, 4000);
 
     try {
-      // Get AI response
       const aiResponse = await getAIResponse(text, userId);
-
-      // Stop typing indicator
       clearInterval(typingInterval);
 
-      // Send response
       await bot.sendMessage(chatId, aiResponse, {
         message_thread_id: messageThreadId,
         reply_to_message_id: messageId,
@@ -82,14 +91,12 @@ async function processQueue() {
 
       console.log("AI response sent successfully");
     } catch (innerError) {
-      // Stop typing indicator on error
       clearInterval(typingInterval);
-      throw innerError; // Re-throw to outer catch
+      throw innerError;
     }
   } catch (error) {
     console.error("Error processing message from queue:", error);
 
-    // Send error message to user
     try {
       await bot.sendMessage(
         chatId,
@@ -104,20 +111,15 @@ async function processQueue() {
     }
   }
 
-  // Wait before processing next message (rate limiting)
   setTimeout(() => {
     isProcessing = false;
-    processQueue(); // Process next message in queue
+    processQueue();
   }, RATE_LIMIT_DELAY);
 }
 
-// Bot owner ID
-const BOT_OWNER_ID = 1716743252; // @TheBestDani
-
-// Function to call Gemini AI - UPDATED VERSION
+// Function to call Gemini AI
 async function getAIResponse(userMessage, userId) {
   try {
-    // Get or initialize conversation history for this user
     if (!conversationHistory.has(userId)) {
       conversationHistory.set(userId, []);
     }
@@ -132,18 +134,15 @@ async function getAIResponse(userMessage, userId) {
 
     const messageWithContext = `${userContext}${userMessage}`;
 
-    // Add user message to history
     history.push({
       role: "user",
       content: messageWithContext,
     });
 
-    // Keep only last 10 messages to avoid token limits
     if (history.length > 10) {
       history.splice(0, history.length - 10);
     }
 
-    // Format messages for Gemini API
     const geminiMessages = history.map((msg) => ({
       role: msg.role === "assistant" ? "model" : "user",
       parts: [{ text: msg.content }],
@@ -372,7 +371,6 @@ User: "ربات کصکش جواب بده"
 
     const aiMessage = response.data.candidates[0].content.parts[0].text;
 
-    // Add AI response to history (without the context prefix)
     history.push({
       role: "assistant",
       content: aiMessage,
@@ -387,9 +385,9 @@ User: "ربات کصکش جواب بده"
     return "Sorry, I cannot respond at the moment. Please try again later.";
   }
 }
+
 // ==================== TAKLIF FUNCTIONS ====================
 
-// Function to convert Gregorian date to Persian (Jalali) date
 function gregorianToJalali(gDate) {
   const date = new Date(gDate);
   let gy = date.getFullYear();
@@ -534,65 +532,6 @@ function jalaliToGregorian(jy, jm, jd) {
   };
 }
 
-function isJalaliLeapYear(jy) {
-  const breaks = [
-    -61, 9, 38, 199, 426, 686, 756, 818, 1111, 1181, 1210, 1635, 2060, 2097,
-    2192, 2262, 2324, 2394, 2456, 3178,
-  ];
-
-  let jp = breaks[0];
-  let jump = 0;
-
-  for (let i = 1; i < breaks.length; i++) {
-    const jm = breaks[i];
-    jump = jm - jp;
-    if (jy < jm) break;
-    jp = jm;
-  }
-
-  const n = jy - jp;
-
-  if (jump - n < 6) {
-    n = n - jump + Math.floor((jump + 4) / 33) * 33;
-  }
-
-  let leap = (((n + 1) % 33) - 1) % 4;
-  if (leap === -1) {
-    leap = 4;
-  }
-
-  return leap === 0;
-}
-
-function diffToDHMS(fromDate, toDate) {
-  let delta = Math.floor((toDate - fromDate) / 1000); // total seconds
-  if (delta <= 0)
-    return { days: 0, hours: 0, minutes: 0, seconds: 0, negative: true };
-  const days = Math.floor(delta / 86400);
-  delta %= 86400;
-  const hours = Math.floor(delta / 3600);
-  delta %= 3600;
-  const minutes = Math.floor(delta / 60);
-  const seconds = delta % 60;
-  return { days, hours, minutes, seconds, negative: false };
-}
-
-function jalaliStringToDate(solarDateStr) {
-  const [datePart, timePart] = solarDateStr.trim().split(/\s+/);
-  const [jy, jm, jd] = datePart.split("/").map(Number);
-  const t = timePart ? timePart.split(":").map(Number) : [0, 0, 0];
-  const hour = t[0] || 0,
-    minute = t[1] || 0,
-    second = t[2] || 0;
-
-  const g = jalaliToGregorian(jy, jm, jd);
-  const date = new Date(Date.UTC(g.gy, g.gm - 1, g.gd, 0, 0, 0));
-  date.setUTCHours(hour, minute, second, 0);
-
-  return date;
-}
-
-// Load sent taklif history
 function loadSentTaklif() {
   try {
     if (fs.existsSync(SENT_TAKLIF_FILE)) {
@@ -605,7 +544,6 @@ function loadSentTaklif() {
   return { lastCheck: null, sentMessageIds: [] };
 }
 
-// Save sent taklif history
 function saveSentTaklif(data) {
   try {
     fs.writeFileSync(SENT_TAKLIF_FILE, JSON.stringify(data, null, 2), "utf-8");
@@ -614,7 +552,6 @@ function saveSentTaklif(data) {
   }
 }
 
-// Fetch homework from website
 async function fetchHomework() {
   console.log("🔄 Fetching homework...");
 
@@ -702,7 +639,6 @@ async function fetchHomework() {
         files: [],
       };
 
-      // Extract file attachments
       const filesRegex =
         /<tblCAClassEventsAttachment>([\s\S]*?)<\/tblCAClassEventsAttachment>/g;
       let fileMatch;
@@ -722,18 +658,14 @@ async function fetchHomework() {
         }
       }
 
-      // Calculate time remaining
       if (deadlineRaw) {
-        // Parse deadline date
         const deadlineDate = new Date(deadlineRaw);
 
-        // Get current time in Iran timezone (UTC+3:30)
         const now = new Date();
-        const iranOffset = 3.5 * 60 * 60 * 1000; // 3.5 hours in milliseconds
+        const iranOffset = 3.5 * 60 * 60 * 1000;
         const utcTime = now.getTime() + now.getTimezoneOffset() * 60 * 1000;
         const iranTime = new Date(utcTime + iranOffset);
 
-        // Calculate difference
         const diffMs = deadlineDate.getTime() - iranTime.getTime();
 
         if (diffMs > 0) {
@@ -762,29 +694,33 @@ async function fetchHomework() {
   }
 }
 
-// Format homework message for Telegram
 function formatHomeworkMessage(homework) {
-  let message = `📚 *${homework.subject}*\n\n`;
-  message += `📝 *عنوان تکلیف:*\n${homework.title}\n\n`;
+  let message = `📚 <b>${escapeHtml(homework.subject)}</b>\n\n`;
+  message += `📝 <b>عنوان تکلیف:</b>\n${escapeHtml(homework.title)}\n\n`;
 
   if (homework.description) {
-    message += `📄 *شرح:*\n${homework.description}\n\n`;
+    message += `📄 <b>شرح:</b>\n${escapeHtml(homework.description)}\n\n`;
   }
 
   if (homework.publishDate) {
-    message += `📌 *تاریخ انتشار:*\n${homework.publishDate}\n\n`;
+    message += `📌 <b>تاریخ انتشار:</b>\n${escapeHtml(
+      homework.publishDate
+    )}\n\n`;
   }
 
-  message += `📅 *موعد تحویل:*\n${homework.deadline || "نامشخص"}\n\n`;
+  message += `📅 <b>موعد تحویل:</b>\n${
+    escapeHtml(homework.deadline) || "نامشخص"
+  }\n\n`;
 
   if (homework.timeRemaining) {
-    message += `⏰ *زمان باقیمانده:* ${homework.timeRemaining}`;
+    message += `⏰ <b>زمان باقیمانده:</b> ${escapeHtml(
+      homework.timeRemaining
+    )}`;
   }
 
   return message;
 }
 
-// Delete previous messages
 async function deletePreviousMessages() {
   const sentData = loadSentTaklif();
 
@@ -804,12 +740,10 @@ async function deletePreviousMessages() {
     }
   }
 
-  // Clear the message IDs
   sentData.sentMessageIds = [];
   saveSentTaklif(sentData);
 }
 
-// Send homework to channel
 async function sendHomeworkToChannel(homeworks) {
   const sentData = loadSentTaklif();
 
@@ -818,7 +752,6 @@ async function sendHomeworkToChannel(homeworks) {
     return;
   }
 
-  // Delete previous messages first
   await deletePreviousMessages();
 
   console.log(`📤 Sending ${homeworks.length} homework(s) to channel topic`);
@@ -829,24 +762,20 @@ async function sendHomeworkToChannel(homeworks) {
     try {
       const message = formatHomeworkMessage(homework);
       const sentMessage = await bot.sendMessage(TAKLIF_CHANNEL_ID, message, {
-        parse_mode: "Markdown",
+        parse_mode: "HTML",
         message_thread_id: TAKLIF_TOPIC_ID,
       });
 
       newMessageIds.push(sentMessage.message_id);
       console.log(`✅ Sent: ${homework.subject} - ${homework.title}`);
 
-      // Wait a bit after sending message
       await new Promise((resolve) => setTimeout(resolve, 500));
 
-      // Send file attachments if any
       if (homework.files && homework.files.length > 0) {
-        // Create authenticated client for downloading files
         const jar = new CookieJar();
         const client = wrapper(axios.create({ jar }));
 
         try {
-          // Login first to get cookies
           const loginPageUrl =
             "https://haftometir.modabberonline.com/Login.aspx?ReturnUrl=%2f&AspxAutoDetectCookieSupport=1";
           const loginPageResponse = await client.get(loginPageUrl);
@@ -890,7 +819,6 @@ async function sendHomeworkToChannel(homeworks) {
             console.log(`📎 Downloading file: ${file.fileName}`);
             console.log(`📎 URL: ${file.url}`);
 
-            // Download file with authenticated session
             const response = await client.get(file.url, {
               responseType: "arraybuffer",
               timeout: 30000,
@@ -902,7 +830,6 @@ async function sendHomeworkToChannel(homeworks) {
 
             console.log(`✅ Downloaded ${response.data.length} bytes`);
 
-            // Check if we got HTML error page instead of file
             if (
               response.data.length < 10000 &&
               response.headers["content-type"]?.includes("text/html")
@@ -913,11 +840,9 @@ async function sendHomeworkToChannel(homeworks) {
               continue;
             }
 
-            // Save to temp file
             const tempFilePath = path.join(__dirname, "temp_" + file.fileName);
             fs.writeFileSync(tempFilePath, response.data);
 
-            // Send the file based on extension
             const extension = file.extension.toLowerCase();
             if (
               ["jpg", "jpeg", "png", "gif", "bmp", "webp"].includes(extension)
@@ -947,7 +872,6 @@ async function sendHomeworkToChannel(homeworks) {
               console.log(`✅ Sent document: ${file.fileName}`);
             }
 
-            // Delete temp file
             fs.unlinkSync(tempFilePath);
 
             await new Promise((resolve) => setTimeout(resolve, 500));
@@ -956,15 +880,12 @@ async function sendHomeworkToChannel(homeworks) {
               `❌ آپلود ناموفق ${file.fileName}:`,
               fileError.message
             );
-            // Continue with next file instead of stopping
             continue;
           }
         }
 
-        // Wait longer after sending all files before next homework
         await new Promise((resolve) => setTimeout(resolve, 1500));
       } else {
-        // Wait 1 second if no files
         await new Promise((resolve) => setTimeout(resolve, 1000));
       }
     } catch (error) {
@@ -977,7 +898,6 @@ async function sendHomeworkToChannel(homeworks) {
   saveSentTaklif(sentData);
 }
 
-// Check and send new homework
 async function checkAndSendHomework() {
   console.log("\n🔍 Checking for new homework...");
   const homeworks = await fetchHomework();
@@ -989,14 +909,12 @@ async function checkAndSendHomework() {
   console.log("✅ Check completed\n");
 }
 
-// Calculate milliseconds until next 3 PM
 function getMillisecondsUntilNextUpdate() {
   const now = new Date();
   const next3PM = new Date();
 
   next3PM.setHours(DAILY_UPDATE_HOUR, 0, 0, 0);
 
-  // If it's already past 3 PM today, schedule for tomorrow
   if (now >= next3PM) {
     next3PM.setDate(next3PM.getDate() + 1);
   }
@@ -1009,17 +927,15 @@ function getMillisecondsUntilNextUpdate() {
   return msUntilNext;
 }
 
-// Schedule daily update
 function scheduleDailyUpdate() {
   const msUntilNext = getMillisecondsUntilNextUpdate();
 
   setTimeout(() => {
     checkAndSendHomework();
 
-    // Schedule next update (24 hours later)
     setInterval(() => {
       checkAndSendHomework();
-    }, 24 * 60 * 60 * 1000); // 24 hours
+    }, 24 * 60 * 60 * 1000);
   }, msUntilNext);
 }
 
@@ -1057,18 +973,15 @@ bot.onText(/\/taklif/, async (msg) => {
     for (const homework of homeworks) {
       const message = formatHomeworkMessage(homework);
       await bot.sendMessage(chatId, message, {
-        parse_mode: "Markdown",
+        parse_mode: "HTML",
         message_thread_id: messageThreadId,
       });
 
-      // Send file attachments if any
       if (homework.files && homework.files.length > 0) {
-        // Create authenticated client for downloading files
         const jar = new CookieJar();
         const client = wrapper(axios.create({ jar }));
 
         try {
-          // Login first to get cookies
           const loginPageUrl =
             "https://haftometir.modabberonline.com/Login.aspx?ReturnUrl=%2f&AspxAutoDetectCookieSupport=1";
           const loginPageResponse = await client.get(loginPageUrl);
@@ -1112,7 +1025,6 @@ bot.onText(/\/taklif/, async (msg) => {
             console.log(`📎 Downloading file: ${file.fileName}`);
             console.log(`📎 URL: ${file.url}`);
 
-            // Download file with authenticated session
             const response = await client.get(file.url, {
               responseType: "arraybuffer",
               timeout: 30000,
@@ -1124,7 +1036,6 @@ bot.onText(/\/taklif/, async (msg) => {
 
             console.log(`✅ Downloaded ${response.data.length} bytes`);
 
-            // Check if we got HTML error page instead of file
             if (
               response.data.length < 10000 &&
               response.headers["content-type"]?.includes("text/html")
@@ -1135,11 +1046,9 @@ bot.onText(/\/taklif/, async (msg) => {
               continue;
             }
 
-            // Save to temp file
             const tempFilePath = path.join(__dirname, "temp_" + file.fileName);
             fs.writeFileSync(tempFilePath, response.data);
 
-            // Send the file based on extension
             const extension = file.extension.toLowerCase();
             if (
               ["jpg", "jpeg", "png", "gif", "bmp", "webp"].includes(extension)
@@ -1163,7 +1072,6 @@ bot.onText(/\/taklif/, async (msg) => {
               console.log(`✅ Sent document: ${file.fileName}`);
             }
 
-            // Delete temp file
             fs.unlinkSync(tempFilePath);
 
             await new Promise((resolve) => setTimeout(resolve, 500));
@@ -1172,13 +1080,11 @@ bot.onText(/\/taklif/, async (msg) => {
               `❌ آپلود ناموفق ${file.fileName}:`,
               fileError.message
             );
-            // Continue with next file instead of stopping
             continue;
           }
         }
       }
 
-      // Wait 1 second between messages
       await new Promise((resolve) => setTimeout(resolve, 1000));
     }
 
@@ -1200,6 +1106,12 @@ bot.onText(/\/taklif/, async (msg) => {
 // Handle incoming messages
 bot.on("message", async (msg) => {
   try {
+    // اول از همه چک duplicate
+    if (processedMessageIds.has(msg.message_id)) {
+      console.log("Duplicate message ignored:", msg.message_id);
+      return;
+    }
+
     const chatId = msg.chat.id;
     const messageThreadId = msg.message_thread_id;
     const userId = msg.from.id;
@@ -1211,18 +1123,19 @@ bot.on("message", async (msg) => {
       userId,
       text,
       chatType: msg.chat.type,
+      messageId: msg.message_id,
     });
 
-    // Check if message is from the specific channel and topic
     if (chatId === CHANNEL_ID && messageThreadId === TOPIC_ID) {
       console.log("Message is from target channel and topic");
 
-      // Ignore bot's own messages
       if (msg.from.is_bot) {
         return;
       }
 
-      // Add message to queue
+      // فوراً به Set اضافه کن
+      processedMessageIds.add(msg.message_id);
+
       messageQueue.push({
         chatId,
         messageThreadId,
@@ -1235,7 +1148,6 @@ bot.on("message", async (msg) => {
         `Message added to queue. Queue length: ${messageQueue.length}`
       );
 
-      // Notify user about queue status
       if (messageQueue.length > 1) {
         const queuePosition = messageQueue.length - 1;
         const estimatedWaitTime = queuePosition * (RATE_LIMIT_DELAY / 1000);
@@ -1250,7 +1162,6 @@ bot.on("message", async (msg) => {
         );
       }
 
-      // Start processing queue
       processQueue();
     } else {
       console.log("Message ignored - not from target channel/topic");
@@ -1262,7 +1173,6 @@ bot.on("message", async (msg) => {
 
 // Handle polling errors
 bot.on("polling_error", (error) => {
-  // Ignore network errors, only log critical ones
   if (error.code !== "EFATAL" && error.code !== "ETELEGRAM") {
     console.log("Minor polling error (ignored):", error.code);
   } else {
@@ -1333,7 +1243,6 @@ app.listen(PORT, () => {
   );
   console.log(`📚 Taklif Bot: Daily updates at ${DAILY_UPDATE_HOUR}:00`);
 
-  // Start taklif scheduler
   scheduleDailyUpdate();
 });
 
